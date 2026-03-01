@@ -40,6 +40,15 @@
         '.tex-chip:hover { background:#223366; }',
         '.tex-chip img { width:36px; height:36px; object-fit:cover; border-radius:4px; }',
         '.tex-chip .del { color:#c04040; margin-left:6px; font-size:18px; }',
+        '.outfit-gallery { display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }',
+        '.outfit-card { display:flex; flex-direction:column; align-items:center; background:#1a1a2e;',
+        '  border:2px solid #333; border-radius:8px; padding:8px; cursor:pointer; width:130px;',
+        '  font-size:18px; text-align:center; gap:6px; transition:border-color 0.15s; }',
+        '.outfit-card:hover { border-color:#0066cc; background:#1a2a4a; }',
+        '.outfit-card.wearing { border-color:#00aa44; background:#0a2a14; }',
+        '.outfit-card img { width:110px; height:110px; object-fit:cover; border-radius:5px; background:#252535; }',
+        '.outfit-card .oname { word-break:break-word; line-height:1.2; max-width:120px; }',
+        '.outfit-card .norlv { color:#cc6644; font-size:16px; }',
     ].join('\n');
     document.head.appendChild(css);
 
@@ -106,6 +115,23 @@
                 '<button class="br" id="btn-detachitem">Item Ablegen</button>' +
             '</div>' +
             '<p class="hint">Benötigt RLVa im Viewer. Ordnerpfade relativ zu #RLV.</p>' +
+
+            // ── OUTFIT GALERIE ──
+            '<div class="sep"></div>' +
+            '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px">' +
+                '<span style="font-size:24px;font-weight:bold">📦 Outfit Galerie</span>' +
+                '<button class="bb" id="btn-outfit-scan" style="font-size:18px;padding:7px 14px">🔄 Scannen</button>' +
+                '<span id="outfit-gallery-count" style="color:#666;font-size:18px"></span>' +
+            '</div>' +
+            '<div id="outfit-gallery-info" style="background:#131a25;border:1px solid #334;border-radius:5px;' +
+                'padding:8px 12px;font-size:18px;color:#8899bb;margin-bottom:8px;line-height:1.5">' +
+                '💡 Lege Outfit-Vorschaubilder in den <b>Content-Tab des HUDs</b>.<br>' +
+                'Benenne jedes Bild exakt wie den #RLV-Unterordner (z.B. <i>Outfits/CasualDress</i>).<br>' +
+                'Das HUD scannt dann diese Texturen automatisch und baut die Galerie.' +
+            '</div>' +
+            '<div id="outfit-gallery" class="outfit-gallery">' +
+                '<span style="color:#555;font-size:20px">Klicke Scannen zum Laden...</span>' +
+            '</div>' +
         '</div>' +
 
         // ── ANIMATION ──
@@ -225,6 +251,8 @@
         '</div>';
 
     // ── Tab-Logik ─────────────────────────────────────────────
+    var outfitGalleryLoaded = false;
+
     document.querySelectorAll('.tab').forEach(function (tab) {
         tab.addEventListener('click', function () {
             var name = tab.getAttribute('data-tab');
@@ -234,6 +262,11 @@
             document.querySelectorAll('.panel').forEach(function (p) {
                 p.classList.toggle('active', p.id === 'p-' + name);
             });
+            // Outfit-Galerie beim ersten Öffnen automatisch scannen
+            if (name === 'outfit' && !outfitGalleryLoaded) {
+                outfitGalleryLoaded = true;
+                loadOutfitGallery();
+            }
         });
     });
 
@@ -375,6 +408,110 @@
         var el = document.getElementById(id);
         if (el) el.addEventListener('click', fn);
     }
+
+    // ── Outfit Galerie ────────────────────────────────────────
+
+    var currentlyWearing = null; // merkt sich den zuletzt angezogenen Ordner
+    var rlvAvailable = false;    // wird beim Status-Update gesetzt
+
+    // Beim Status-Update RLV-Status mitladen
+    var _origUpdateStatus = updateStatus;
+    updateStatus = function () {
+        api('status', {}, function (d) {
+            if (d && typeof d === 'object') {
+                rlvAvailable = !!d.rlv;
+                var pos = d.pos ? (' [' + d.pos.x + '/' + d.pos.y + '/' + d.pos.z + ']') : '';
+                setStatus((d.name || '?') + '  ·  ' + (d.region || '?') + pos +
+                    (d.rlv ? '  ·  RLV ✓' : '  ·  RLV ✗'), false);
+                // Galerie-Karten aktualisieren wenn sich RLV-Status ändert
+                updateGalleryRLVState();
+            }
+        });
+    };
+
+    function updateGalleryRLVState() {
+        document.querySelectorAll('.outfit-card').forEach(function (card) {
+            var noRlvNote = card.querySelector('.norlv');
+            if (noRlvNote) noRlvNote.style.display = rlvAvailable ? 'none' : 'block';
+            card.style.opacity = rlvAvailable ? '1' : '0.55';
+            card.title = rlvAvailable ? card.getAttribute('data-folder') : 'RLV nicht aktiv – Anziehen nicht möglich';
+        });
+    }
+
+    function loadOutfitGallery() {
+        var gallery = document.getElementById('outfit-gallery');
+        var countEl = document.getElementById('outfit-gallery-count');
+        if (gallery) gallery.innerHTML = '<span style="color:#aaaaff;font-size:20px">⏳ Scanne HUD-Inventory...</span>';
+        if (countEl) countEl.textContent = '';
+
+        api('outfit_list', {}, function (outfits) {
+            if (!gallery) return;
+
+            if (!outfits || outfits.length === 0) {
+                gallery.innerHTML =
+                    '<div style="color:#777;font-size:20px;padding:10px;line-height:1.6">' +
+                    '🗂️ Keine Outfit-Texturen im HUD gefunden.<br>' +
+                    '<b>So einrichten:</b><br>' +
+                    '1. Outfit-Vorschaubild (Textur) in Inventory suchen<br>' +
+                    '2. In den <b>Content-Tab des HUD-Objekts</b> ziehen<br>' +
+                    '3. Textur umbenennen → genau wie der #RLV-Unterordner<br>' +
+                    '&nbsp;&nbsp;&nbsp;Beispiel: <i>Outfits/CasualDress</i><br>' +
+                    '4. Nochmal Scannen klicken' +
+                    '</div>';
+                if (countEl) countEl.textContent = '(0 Outfits)';
+                return;
+            }
+
+            if (countEl) countEl.textContent = '(' + outfits.length + ' Outfits)';
+
+            gallery.innerHTML = outfits.map(function (o, i) {
+                var thumbUrl = 'https://picture-service.secondlife.com/' + o.uuid + '/100x100.jpg';
+                // Anzeigename: letzten Teil des Pfades nehmen (z.B. "Outfits/CasualDress" → "CasualDress")
+                var displayName = o.name.split('/').pop();
+                var isWearing = (currentlyWearing === o.name);
+                return '<div class="outfit-card' + (isWearing ? ' wearing' : '') + '" ' +
+                    'data-folder="' + o.name + '" data-index="' + i + '">' +
+                    '<img src="' + thumbUrl + '" ' +
+                    'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" ' +
+                    'alt="' + displayName + '">' +
+                    '<div style="display:none;width:110px;height:110px;background:#252535;border-radius:5px;' +
+                    'align-items:center;justify-content:center;font-size:36px">👗</div>' +
+                    '<span class="oname">' + displayName + '</span>' +
+                    (o.name !== displayName
+                        ? '<span style="color:#666;font-size:15px">' + o.name.split('/').slice(0,-1).join('/') + '</span>'
+                        : '') +
+                    '<span class="norlv" style="display:' + (rlvAvailable ? 'none' : 'block') + '">' +
+                    '⚠️ kein RLV</span>' +
+                    '</div>';
+            }).join('');
+
+            // Klick-Handler
+            gallery.querySelectorAll('.outfit-card').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    if (!rlvAvailable) {
+                        setStatus('RLV nicht aktiv – Outfit anziehen nicht möglich', true);
+                        return;
+                    }
+                    var folder = card.getAttribute('data-folder');
+                    // Vorheriges Wearing-Highlight entfernen
+                    gallery.querySelectorAll('.outfit-card.wearing').forEach(function (c) {
+                        c.classList.remove('wearing');
+                    });
+                    card.classList.add('wearing');
+                    currentlyWearing = folder;
+                    setStatus('⏳ Ziehe an: ' + folder, false);
+                    api('outfit_wearreplace', { folder: folder }, function () {
+                        setStatus('✓ Outfit angezogen: ' + folder.split('/').pop(), false);
+                    });
+                });
+            });
+        });
+    }
+
+    bind('btn-outfit-scan', loadOutfitGallery);
+
+    // Galerie laden wenn Outfit-Tab geöffnet wird
+    var _origTabLogic = null; // wird nach Tab-Logik-Init gesetzt
 
     // ── Texturen ──────────────────────────────────────────────
 
