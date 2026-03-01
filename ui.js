@@ -1060,3 +1060,9 @@
             }
         });
     }
+
+    // Start
+    updateStatus();
+    setInterval(updateStatus, 15000);
+
+})();
