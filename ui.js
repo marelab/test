@@ -125,9 +125,11 @@
             '</div>' +
             '<div id="outfit-gallery-info" style="background:#131a25;border:1px solid #334;border-radius:5px;' +
                 'padding:8px 12px;font-size:18px;color:#8899bb;margin-bottom:8px;line-height:1.5">' +
-                '💡 Lege Outfit-Vorschaubilder in den <b>Content-Tab des HUDs</b>.<br>' +
-                'Benenne jedes Bild exakt wie den #RLV-Unterordner (z.B. <i>Outfits/CasualDress</i>).<br>' +
-                'Das HUD scannt dann diese Texturen automatisch und baut die Galerie.' +
+                '🔍 <b>Mit RLV:</b> Scannt <b>#RLV/Outfits</b> (via @getinv) + HUD-Content-Texturen.<br>' +
+                '🔄 <b>Fallback:</b> Findet @getinv nichts, werden HUD-Texturen angezeigt.<br>' +
+                '🖼️ <b>Vorschaubilder:</b> Textur mit Ordnernamen in HUD-Content legen<br>' +
+                '&nbsp;&nbsp;&nbsp;&nbsp;(z.B. Textur namens <i>CasualDress</i> oder <i>Outfits/CasualDress</i>).<br>' +
+                '⚙️ <b>Anderen Pfad:</b> <code>OUTFITS_PATH</code> im LSL-Script anpassen.' +
             '</div>' +
             '<div id="outfit-gallery" class="outfit-gallery">' +
                 '<span style="color:#555;font-size:20px">Klicke Scannen zum Laden...</span>' +
@@ -441,7 +443,7 @@
     function loadOutfitGallery() {
         var gallery = document.getElementById('outfit-gallery');
         var countEl = document.getElementById('outfit-gallery-count');
-        if (gallery) gallery.innerHTML = '<span style="color:#aaaaff;font-size:20px">⏳ Scanne HUD-Inventory...</span>';
+        if (gallery) gallery.innerHTML = '<span style="color:#aaaaff;font-size:20px">⏳ Scanne HUD-Inventory und RLV-Ordner...</span>';
         if (countEl) countEl.textContent = '';
 
         api('outfit_list', {}, function (outfits) {
@@ -465,20 +467,32 @@
             if (countEl) countEl.textContent = '(' + outfits.length + ' Outfits)';
 
             gallery.innerHTML = outfits.map(function (o, i) {
-                var thumbUrl = 'https://picture-service.secondlife.com/' + o.uuid + '/100x100.jpg';
-                // Anzeigename: letzten Teil des Pfades nehmen (z.B. "Outfits/CasualDress" → "CasualDress")
-                var displayName = o.name.split('/').pop();
-                var isWearing = (currentlyWearing === o.name);
+                // path = voller #RLV-Pfad für @attachoverorreplace
+                // name = Anzeigename (letzter Ordnerteil)
+                // uuid = optional, wenn Textur im HUD-Content mit gleichem Namen
+                var wearPath    = o.path || o.name; // Rückwärts-kompatibel
+                var displayName = o.name || wearPath.split('/').pop();
+                var hasThumb    = o.uuid && o.uuid.length > 10;
+                var thumbUrl    = hasThumb
+                    ? 'https://picture-service.secondlife.com/' + o.uuid + '/100x100.jpg'
+                    : '';
+                var isWearing   = (currentlyWearing === wearPath);
+
+                var imgHtml = hasThumb
+                    ? '<img src="' + thumbUrl + '" ' +
+                      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" ' +
+                      'alt="' + displayName + '">' +
+                      '<div style="display:none;width:110px;height:110px;background:#252535;border-radius:5px;' +
+                      'align-items:center;justify-content:center;font-size:36px">👗</div>'
+                    : '<div style="display:flex;width:110px;height:110px;background:#252535;border-radius:5px;' +
+                      'align-items:center;justify-content:center;font-size:36px">👗</div>';
+
                 return '<div class="outfit-card' + (isWearing ? ' wearing' : '') + '" ' +
-                    'data-folder="' + o.name + '" data-index="' + i + '">' +
-                    '<img src="' + thumbUrl + '" ' +
-                    'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" ' +
-                    'alt="' + displayName + '">' +
-                    '<div style="display:none;width:110px;height:110px;background:#252535;border-radius:5px;' +
-                    'align-items:center;justify-content:center;font-size:36px">👗</div>' +
+                    'data-folder="' + wearPath + '" title="' + wearPath + '">' +
+                    imgHtml +
                     '<span class="oname">' + displayName + '</span>' +
-                    (o.name !== displayName
-                        ? '<span style="color:#666;font-size:15px">' + o.name.split('/').slice(0,-1).join('/') + '</span>'
+                    (!hasThumb
+                        ? '<span style="color:#555;font-size:14px">kein Bild</span>'
                         : '') +
                     '<span class="norlv" style="display:' + (rlvAvailable ? 'none' : 'block') + '">' +
                     '⚠️ kein RLV</span>' +
@@ -493,13 +507,12 @@
                         return;
                     }
                     var folder = card.getAttribute('data-folder');
-                    // Vorheriges Wearing-Highlight entfernen
                     gallery.querySelectorAll('.outfit-card.wearing').forEach(function (c) {
                         c.classList.remove('wearing');
                     });
                     card.classList.add('wearing');
                     currentlyWearing = folder;
-                    setStatus('⏳ Ziehe an: ' + folder, false);
+                    setStatus('⏳ Ziehe an: ' + folder.split('/').pop(), false);
                     api('outfit_wearreplace', { folder: folder }, function () {
                         setStatus('✓ Outfit angezogen: ' + folder.split('/').pop(), false);
                     });
