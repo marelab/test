@@ -35,6 +35,11 @@
         '  padding: 12px; font-size: 24px; margin: 6px 0; border-radius: 4px; }',
         '.hint { color: #777; font-size: 20px; margin-top: 8px; line-height: 1.4; }',
         '.sep { border-top: 1px solid #333; margin: 14px 0; }',
+        '.tex-chip { display:inline-flex; align-items:center; background:#1a1a2e; border:1px solid #444;',
+        '  border-radius:20px; padding:6px 14px; margin:4px; cursor:pointer; font-size:20px; gap:8px; }',
+        '.tex-chip:hover { background:#223366; }',
+        '.tex-chip img { width:36px; height:36px; object-fit:cover; border-radius:4px; }',
+        '.tex-chip .del { color:#c04040; margin-left:6px; font-size:18px; }',
     ].join('\n');
     document.head.appendChild(css);
 
@@ -49,6 +54,7 @@
             '<div class="tab" data-tab="chat">Chat</div>' +
             '<div class="tab" data-tab="tp">Teleport</div>' +
             '<div class="tab" data-tab="rlv">RLV</div>' +
+        '<div class="tab" data-tab="tex">Texturen</div>' +
         '</div>' +
 
         // ── BEWEGEN ──
@@ -161,6 +167,61 @@
             '<p class="hint">Befehle ohne @ eintippen. Beispiele:<br>' +
                 'detach=force • sit:UUID=force • unsit=force<br>' +
                 'addoutfit:Folder=force • remoutfit:Folder=force</p>' +
+        '</div>' +
+
+        // ── TEXTUREN ──
+        '<div id="p-tex" class="panel">' +
+            '<label>Textur-UUID:</label>' +
+            '<input id="tex-uuid" placeholder="00000000-0000-0000-0000-000000000000">' +
+            '<div class="row">' +
+                '<button class="bb" id="btn-tex-preview">🔍 Vorschau laden</button>' +
+                '<button class="bg" id="btn-tex-setprim">Auf Prim setzen</button>' +
+                '<button class="bo" id="btn-tex-copy">UUID kopieren</button>' +
+            '</div>' +
+
+            // Größen-Auswahl
+            '<div class="row" style="margin-top:6px">' +
+                '<button class="bb" id="btn-tex-s100" style="font-size:18px;padding:8px">100×100</button>' +
+                '<button class="bb" id="btn-tex-s256" style="font-size:18px;padding:8px">256×192</button>' +
+                '<button class="bb active-size" id="btn-tex-s320" style="font-size:18px;padding:8px;background:#005599">320×240 ★</button>' +
+                '<button class="bb" id="btn-tex-s512" style="font-size:18px;padding:8px">512×512</button>' +
+            '</div>' +
+
+            // Vorschau-Bereich
+            '<div id="tex-box" style="margin-top:10px;min-height:200px;background:#1a1a1a;border:2px solid #444;' +
+                'border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative">' +
+                '<span id="tex-placeholder" style="color:#555;font-size:22px;padding:20px;text-align:center">' +
+                    'UUID eingeben → Vorschau laden' +
+                '</span>' +
+                '<img id="tex-img" style="display:none;max-width:100%;max-height:340px;object-fit:contain">' +
+            '</div>' +
+
+            // Status-Zeile + URL
+            '<div id="tex-status" style="margin-top:8px;font-size:20px;color:#aaa;min-height:24px"></div>' +
+            '<div id="tex-url" style="font-size:17px;color:#555;word-break:break-all;margin-top:4px"></div>' +
+
+            '<div class="sep"></div>' +
+
+            // Gespeicherte Texturen
+            '<label>Gespeicherte Texturen:</label>' +
+            '<div id="tex-saved" class="row" style="flex-wrap:wrap">' +
+                '<span style="color:#555;font-size:20px">Noch keine gespeichert – lade eine Vorschau und klicke Speichern.</span>' +
+            '</div>' +
+            '<div class="row">' +
+                '<input id="tex-label" placeholder="Name für diese Textur" style="width:60%;margin-right:6px">' +
+                '<button class="bg" id="btn-tex-save" style="width:calc(40% - 10px)">💾 Speichern</button>' +
+            '</div>' +
+
+            '<div class="sep"></div>' +
+            '<div style="background:#1a1510;border:1px solid #554422;border-radius:5px;padding:10px;font-size:19px;color:#cc9944;line-height:1.6">' +
+                '📡 <b>Quelle:</b> Linden Lab Picture Service (Akamai CDN)<br>' +
+                'URL: <span style="color:#cc9944;font-size:17px">picture-service.secondlife.com/UUID/GRÖSSExGRÖSSE.jpg</span><br><br>' +
+                '✅ <b>Funktioniert für:</b> Profilbilder, Snapshots, Texturen die als<br>' +
+                '&nbsp;&nbsp;&nbsp;&nbsp;öffentlich markiert wurden, Linden Standard-Texturen<br>' +
+                '⚠️ <b>Thumbnail (klein):</b> Für die meisten Texturen erreichbar<br>' +
+                '❌ <b>Nicht möglich:</b> Private Inventory-Texturen in voller Auflösung<br>' +
+                '&nbsp;&nbsp;&nbsp;&nbsp;(Linden Lab schützt diese bewusst gegen Piraterie)' +
+            '</div>' +
         '</div>';
 
     // ── Tab-Logik ─────────────────────────────────────────────
@@ -313,6 +374,218 @@
     function bind(id, fn) {
         var el = document.getElementById(id);
         if (el) el.addEventListener('click', fn);
+    }
+
+    // ── Texturen ──────────────────────────────────────────────
+
+    // ── Offizieller SL Picture Service (Akamai CDN) ──
+    // Quelle: https://wiki.secondlife.com/wiki/Picture_Service
+    // Format: https://picture-service.secondlife.com/UUID/WIDTHxHEIGHT.jpg
+    // Einschränkung: Thumbnails funktionieren für alle Texturen,
+    //   höhere Auflösungen nur für Profilbilder / öffentlich markierte Snapshots.
+    var TEX_CDN = [
+        'https://picture-service.secondlife.com/{UUID}/320x240.jpg',
+        'https://picture-service.secondlife.com/{UUID}/256x192.jpg',
+        'https://picture-service.secondlife.com/{UUID}/100x100.jpg',
+        'https://secondlife-thumbnails.s3.amazonaws.com/{UUID}.jpg'
+    ];
+
+    // Für "Auf Prim setzen" → höhere Auflösungen versuchen
+    var TEX_CDN_LARGE = [
+        'https://picture-service.secondlife.com/{UUID}/512x512.jpg',
+        'https://picture-service.secondlife.com/{UUID}/320x240.jpg'
+    ];
+
+    // Gespeicherte Texturen (LocalStorage nicht verfügbar in SL-Browser → in-memory)
+    var savedTextures = [];
+
+    function texStatus(msg, color) {
+        var el = document.getElementById('tex-status');
+        if (el) { el.textContent = msg; el.style.color = color || '#aaa'; }
+    }
+
+    function tryTextureUrl(uuid, primaryUrl, fallbackIndex) {
+        var img = document.getElementById('tex-img');
+        var ph  = document.getElementById('tex-placeholder');
+        var urlEl = document.getElementById('tex-url');
+
+        function onSuccess(loadedUrl) {
+            ph.style.display  = 'none';
+            img.style.display = 'block';
+            img.setAttribute('data-url', loadedUrl);
+            var host = loadedUrl.replace('https://', '').split('/')[0];
+            texStatus('✓ Geladen (' + currentTexSize + ') von ' + host, '#66dd66');
+            if (urlEl) urlEl.textContent = loadedUrl;
+        }
+
+        function tryFallback() {
+            if (fallbackIndex >= TEX_CDN.length) {
+                img.style.display = 'none';
+                ph.style.display  = 'block';
+                ph.textContent    = '🚫 Nicht öffentlich zugänglich';
+                texStatus('Textur nicht abrufbar – privat oder nicht im Picture Service vorhanden.', '#cc6644');
+                if (urlEl) urlEl.textContent = 'Versucht: ' + primaryUrl;
+                return;
+            }
+            var fallbackUrl = TEX_CDN[fallbackIndex].replace(/{UUID}/g, uuid);
+            texStatus('Versuche Fallback ' + (fallbackIndex + 1) + '/' + TEX_CDN.length + '...', '#aaaaff');
+            img.onload  = function () { onSuccess(fallbackUrl); };
+            img.onerror = function () { tryFallback.call(null); fallbackIndex++; };
+            // Neu setzen damit onerror neu triggert:
+            img.src = '';
+            setTimeout(function() { img.src = fallbackUrl; }, 10);
+        }
+
+        texStatus('Lade ' + currentTexSize + '...', '#aaaaff');
+        if (urlEl) urlEl.textContent = primaryUrl;
+
+        img.onload = function () { onSuccess(primaryUrl); };
+        img.onerror = function () {
+            // Primäre URL fehlgeschlagen → Fallbacks
+            tryFallback();
+        };
+        img.src = primaryUrl;
+    }
+
+    // Legacy-Alias (falls noch verwendet)
+    function tryLoadTexture(uuid, urlIndex) {
+        var url = TEX_CDN[urlIndex].replace(/{UUID}/g, uuid);
+        tryTextureUrl(uuid, url, urlIndex + 1);
+    }
+
+    // Aktive Größe (Standard: 320x240)
+    var currentTexSize = '320x240';
+
+    function setTexSize(size) {
+        currentTexSize = size;
+        ['100x100','256x192','320x240','512x512'].forEach(function (s) {
+            var btn = document.getElementById('btn-tex-s' + s.split('x')[0]);
+            if (btn) btn.style.background = (s === size) ? '#005599' : '#1a4a8a';
+        });
+    }
+
+    bind('btn-tex-s100', function () { setTexSize('100x100');  reloadIfUUID(); });
+    bind('btn-tex-s256', function () { setTexSize('256x192');  reloadIfUUID(); });
+    bind('btn-tex-s320', function () { setTexSize('320x240');  reloadIfUUID(); });
+    bind('btn-tex-s512', function () { setTexSize('512x512');  reloadIfUUID(); });
+
+    function reloadIfUUID() {
+        var uuid = val('tex-uuid');
+        if (uuid && uuid.length > 10) {
+            document.getElementById('btn-tex-preview').click();
+        }
+    }
+
+    bind('btn-tex-preview', function () {
+        var uuid = val('tex-uuid').trim();
+        if (!uuid || uuid.length < 10) {
+            texStatus('Bitte gültige UUID eingeben (Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)', '#ff6060');
+            return;
+        }
+        // UUID bereinigen
+        uuid = uuid.replace(/[^a-f0-9\-]/gi, '').toLowerCase();
+        document.getElementById('tex-uuid').value = uuid;
+
+        var img = document.getElementById('tex-img');
+        var ph  = document.getElementById('tex-placeholder');
+        img.style.display = 'none';
+        img.src = '';
+        ph.style.display  = 'block';
+        ph.textContent    = '⏳ Lade Vorschau...';
+        texStatus('');
+        var urlEl = document.getElementById('tex-url');
+        if (urlEl) urlEl.textContent = '';
+
+        // Zuerst die gewählte Größe versuchen, dann Fallbacks
+        var primaryUrl = 'https://picture-service.secondlife.com/' + uuid + '/' + currentTexSize + '.jpg';
+        tryTextureUrl(uuid, primaryUrl, 0);
+    });
+
+    bind('btn-tex-setprim', function () {
+        var uuid = val('tex-uuid');
+        if (!uuid) { texStatus('Bitte UUID eingeben', '#ff6060'); return; }
+        api('texture_set', { uuid: uuid, face: 0 }, function () {
+            texStatus('✓ Textur auf Prim gesetzt!', '#66dd66');
+        });
+    });
+
+    bind('btn-tex-copy', function () {
+        var uuid = val('tex-uuid');
+        if (!uuid) return;
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(uuid).then(function () {
+                texStatus('✓ UUID kopiert: ' + uuid, '#66dd66');
+            });
+        } else {
+            // Fallback für ältere Browser (SL CEF)
+            var tmp = document.createElement('textarea');
+            tmp.value = uuid;
+            document.body.appendChild(tmp);
+            tmp.select();
+            document.execCommand('copy');
+            document.body.removeChild(tmp);
+            texStatus('✓ UUID kopiert: ' + uuid, '#66dd66');
+        }
+    });
+
+    bind('btn-tex-save', function () {
+        var uuid  = val('tex-uuid');
+        var label = val('tex-label') || uuid.substring(0, 8) + '...';
+        if (!uuid) { texStatus('Bitte erst UUID eingeben und Vorschau laden', '#ff6060'); return; }
+
+        var img = document.getElementById('tex-img');
+        var thumb = img && img.style.display !== 'none' ? img.src : null;
+
+        savedTextures.push({ uuid: uuid, label: label, thumb: thumb });
+        renderSavedTextures();
+        texStatus('✓ "' + label + '" gespeichert', '#66dd66');
+        document.getElementById('tex-label').value = '';
+    });
+
+    function renderSavedTextures() {
+        var container = document.getElementById('tex-saved');
+        if (!container) return;
+        if (savedTextures.length === 0) {
+            container.innerHTML = '<span style="color:#555;font-size:20px">Noch keine gespeichert.</span>';
+            return;
+        }
+        container.innerHTML = savedTextures.map(function (t, i) {
+            var thumb = t.thumb
+                ? '<img src="' + t.thumb + '" onerror="this.style.display=\'none\'">'
+                : '<span style="width:36px;height:36px;display:inline-block;background:#333;border-radius:4px"></span>';
+            return '<span class="tex-chip" data-uuid="' + t.uuid + '" data-index="' + i + '">' +
+                       thumb +
+                       '<span>' + t.label + '</span>' +
+                       '<span class="del" data-del="' + i + '">✕</span>' +
+                   '</span>';
+        }).join('');
+
+        // Klick auf Chip → UUID ins Eingabefeld laden
+        container.querySelectorAll('.tex-chip').forEach(function (chip) {
+            chip.addEventListener('click', function (e) {
+                if (e.target.getAttribute('data-del') !== null) {
+                    // Löschen
+                    var idx = parseInt(e.target.getAttribute('data-del'));
+                    savedTextures.splice(idx, 1);
+                    renderSavedTextures();
+                    return;
+                }
+                var uuid = chip.getAttribute('data-uuid');
+                document.getElementById('tex-uuid').value = uuid;
+                texStatus('UUID geladen: ' + uuid, '#aaaaff');
+            });
+        });
+    }
+
+    // Enter in UUID-Feld = Vorschau laden
+    var texInput = document.getElementById('tex-uuid');
+    if (texInput) {
+        texInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                document.getElementById('btn-tex-preview').click();
+                e.preventDefault();
+            }
+        });
     }
 
     // Start
