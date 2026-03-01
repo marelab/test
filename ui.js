@@ -55,6 +55,12 @@
         '.editu-btn { background:#1a4060; color:#fff; font-size:15px; padding:5px 6px;',
         '  width:100%; border:0; border-radius:4px; margin-top:2px; cursor:pointer; }',
         '.editu-btn:hover { background:#2a6090; }',
+        '.gallery-help { position:relative; cursor:help; display:inline-flex; align-items:center; gap:6px; }',
+        '.gallery-tooltip { display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:200;',
+        '  background:#131a25; border:1px solid #445; border-radius:6px; padding:10px 14px;',
+        '  font-size:16px; font-weight:normal; color:#8899bb; line-height:1.6; width:370px;',
+        '  box-shadow:0 4px 20px rgba(0,0,0,0.7); pointer-events:none; white-space:normal; }',
+        '.gallery-help:hover .gallery-tooltip { display:block; }',
     ].join('\n');
     document.head.appendChild(css);
 
@@ -125,21 +131,20 @@
             // ── OUTFIT GALERIE ──
             '<div class="sep"></div>' +
             '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px">' +
-                '<span style="font-size:24px;font-weight:bold">📦 Outfit Galerie</span>' +
+                '<span class="gallery-help" style="font-size:24px;font-weight:bold">' +
+                    '📦 Outfit Galerie <span style="font-size:15px;color:#556">ℹ</span>' +
+                    '<div class="gallery-tooltip">' +
+                        '🔍 <b>Mit RLV:</b> Scannt <b>#RLV/Outfits</b> (via @getinv) + HUD-Content-Texturen.<br>' +
+                        '🔄 <b>Fallback:</b> Findet @getinv nichts, werden HUD-Texturen angezeigt.<br>' +
+                        '🖼️ <b>Vorschaubilder:</b> Textur mit Ordnernamen in HUD-Content legen<br>' +
+                        '&nbsp;&nbsp;(z.B. <i>CasualDress</i> oder <i>Outfits/CasualDress</i>).<br>' +
+                        '👙 <b>Naked:</b> Konfiguration in <b>naked.txt</b> auf GitHub Pages.<br>' +
+                        '&nbsp;&nbsp;Format: <i>[OutfitName]</i>, darunter RLV-Befehle. <i>[*]</i> = Fallback.<br>' +
+                        '⚙️ <b>Pfad:</b> <code>OUTFITS_PATH</code> im LSL-Script anpassen.' +
+                    '</div>' +
+                '</span>' +
                 '<button class="bb" id="btn-outfit-scan" style="font-size:18px;padding:7px 14px">🔄 Scannen</button>' +
                 '<span id="outfit-gallery-count" style="color:#666;font-size:18px"></span>' +
-            '</div>' +
-            '<div id="outfit-gallery-info" style="background:#131a25;border:1px solid #334;border-radius:5px;' +
-                'padding:8px 12px;font-size:18px;color:#8899bb;margin-bottom:8px;line-height:1.5">' +
-                '🔍 <b>Mit RLV:</b> Scannt <b>#RLV/Outfits</b> (via @getinv) + HUD-Content-Texturen.<br>' +
-                '🔄 <b>Fallback:</b> Findet @getinv nichts, werden HUD-Texturen angezeigt.<br>' +
-                '🖼️ <b>Vorschaubilder:</b> Textur mit Ordnernamen in HUD-Content legen<br>' +
-                '&nbsp;&nbsp;&nbsp;&nbsp;(z.B. Textur namens <i>CasualDress</i> oder <i>Outfits/CasualDress</i>).<br>' +
-                '👙 <b>Naked-Button:</b> Notecard <b>naked</b> in HUD-Content legen.<br>' +
-                '&nbsp;&nbsp;&nbsp;&nbsp;Format: <i>[OutfitName]</i> als Header, darunter RLV-Befehle.<br>' +
-                '&nbsp;&nbsp;&nbsp;&nbsp;<i>[*]</i> = Standard-Fallback für alle anderen Outfits.<br>' +
-                '&nbsp;&nbsp;&nbsp;&nbsp;Ohne Notecard / kein Eintrag → Standard (alles ausziehen).<br>' +
-                '⚙️ <b>Anderen Pfad:</b> <code>OUTFITS_PATH</code> im LSL-Script anpassen.' +
             '</div>' +
             '<div id="outfit-gallery" class="outfit-gallery">' +
                 '<span style="color:#555;font-size:20px">Klicke Scannen zum Laden...</span>' +
@@ -543,7 +548,7 @@
                     (!hasThumb
                         ? '<span style="color:#555;font-size:14px">kein Bild</span>'
                         : '') +
-                    '<button class="naked-btn" data-action="naked" title="Kleidung ausziehen (Naked-Notecard)">👙 Naked</button>' +
+                    '<button class="naked-btn" data-action="naked" title="Kleidung ausziehen (naked.txt)">👙 Naked</button>' +
                     '<button class="editu-btn" data-action="editnaked" title="Naked-Konfiguration bearbeiten">✏️ Edit U</button>' +
                     '<span class="norlv" style="display:' + (rlvAvailable ? 'none' : 'block') + '">' +
                     '⚠️ kein RLV</span>' +
@@ -638,7 +643,7 @@
             '<div style="background:#0d1520;border:1px solid #334;border-radius:6px;' +
                 'padding:10px 12px;font-size:17px;color:#8899bb;margin-bottom:12px;line-height:1.5">' +
                 '✅ <b style="color:#aac">gecheckt = wird beim Naked-Button entfernt</b><br>' +
-                '☐ &nbsp;unkecked = bleibt erhalten (kein Häkchen = in Notecard gespeichert)' +
+                '☐ &nbsp;unchecked = bleibt erhalten (kein Häkchen = nicht in naked.txt)' +
             '</div>' +
 
             // Kleidungslagen
@@ -672,17 +677,17 @@
                 '</div>' +
             '</div>' +
 
-            // Notecard-Vorlage (erst nach Speichern sichtbar)
+            // naked.txt Vorlage (erst nach Speichern sichtbar)
             '<div id="modal-nc-section" style="display:none;margin-top:10px">' +
                 '<div style="font-size:18px;font-weight:bold;color:#aaa;margin-bottom:4px">' +
-                    '📋 Notecard-Vorlage <span style="color:#667;font-size:15px">(für permanente Speicherung)</span>' +
+                    '📋 naked.txt Eintrag <span style="color:#667;font-size:15px">(auf GitHub Pages einfügen)</span>' +
                 '</div>' +
                 '<textarea id="modal-nc-text" readonly style="width:100%;height:110px;' +
                     'background:#060c14;color:#7af;border:1px solid #336;border-radius:5px;' +
                     'font-size:15px;padding:8px;font-family:monospace;box-sizing:border-box;' +
                     'resize:vertical"></textarea>' +
                 '<div style="font-size:15px;color:#556;margin-top:4px;line-height:1.4">' +
-                    'Diesen Text in die Notecard <b>naked</b> im HUD-Content kopieren → permanente Speicherung.' +
+                    'Diesen Text in <b>naked.txt</b> auf GitHub Pages einfügen → beim nächsten Naked-Button-Druck aktiv.' +
                 '</div>' +
             '</div>' +
 
@@ -1055,9 +1060,3 @@
             }
         });
     }
-
-    // Start
-    updateStatus();
-    setInterval(updateStatus, 15000);
-
-})();
