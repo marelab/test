@@ -1,3 +1,4 @@
 [REBORN_BODY]
-@attachallover:REBORN_BODY/dick/=force
 @detach:REBORN_BODY/naked/=force
+@attachallover:dick/=force
+
