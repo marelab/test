@@ -659,6 +659,19 @@
                 '</div>' +
             '</div>' +
 
+            // Items-Liste (werden per @getinvworn nachgeladen)
+            '<div style="font-size:20px;font-weight:bold;margin:14px 0 4px">📋 Outfit-Items</div>' +
+            '<div style="background:#0a1018;border:1px solid #2a3448;border-radius:6px;' +
+                'padding:7px 11px;font-size:15px;color:#7788aa;margin-bottom:8px;line-height:1.5">' +
+                'Getragene Items sind vorausgewählt (✓ gecheckt = wird beim Naked entfernt).<br>' +
+                'Haken entfernen = Item bleibt erhalten. Nicht getragene Items werden übersprungen.' +
+            '</div>' +
+            '<div id="modal-items-area">' +
+                '<div id="modal-items-loading" style="color:#6688aa;font-size:17px;padding:6px 0">' +
+                    '⏳ Lade Items aus #RLV (@getinvworn)...' +
+                '</div>' +
+            '</div>' +
+
             // Notecard-Vorlage (erst nach Speichern sichtbar)
             '<div id="modal-nc-section" style="display:none;margin-top:10px">' +
                 '<div style="font-size:18px;font-weight:bold;color:#aaa;margin-bottom:4px">' +
@@ -720,12 +733,64 @@
             area.innerHTML = html;
         });
 
+        // ── Items per @getinvworn nachladen ────────────────────
+        var itemsTimeout = setTimeout(function () {
+            var ld = document.getElementById('modal-items-loading');
+            if (ld) ld.innerHTML =
+                '<span style="color:#664;font-size:17px">⚠ Timeout — @getinvworn nicht unterstützt oder Ordner leer.</span>';
+        }, 9000);
+
+        api('outfit_items_list', { folder: wearPath }, function (items) {
+            clearTimeout(itemsTimeout);
+            var area = document.getElementById('modal-items-area');
+            if (!area) return;
+
+            if (!items || items.length === 0) {
+                area.innerHTML = '<div style="color:#666;font-size:17px;padding:4px 0">Keine Items im Ordner gefunden.</div>';
+                return;
+            }
+
+            var html = '';
+            items.forEach(function (item) {
+                var worn   = (item.worn !== undefined) ? item.worn : 1;
+                var isWorn = worn >= 1;
+                // worn=2 (Attachment): per Pfad detachen
+                // worn=1 (Kleidungslage): allgemeiner @remoutfit (Layer nicht bekannt)
+                // worn=0: @detach trotzdem anbieten (Item im Ordner, aktuell nicht getragen)
+                var rlvCmd = (worn === 1)
+                    ? '@remoutfit=force'
+                    : '@detach:' + item.path + '=force';
+                var wornBadge = isWorn
+                    ? '<span style="color:#44cc66;font-size:14px;flex-shrink:0">✓ getragen</span>'
+                    : '<span style="color:#555;font-size:14px;flex-shrink:0">○ nicht getragen</span>';
+                html +=
+                    '<label style="display:block;cursor:pointer;background:#111627;border:1px solid #334;' +
+                        'border-radius:6px;padding:8px 12px;font-size:17px;margin-bottom:4px;user-select:none">' +
+                        '<div style="display:flex;align-items:center;gap:10px">' +
+                            '<input type="checkbox" class="item-chk" value="' + rlvCmd + '"' +
+                                (isWorn ? ' checked' : '') +
+                                ' style="width:22px;height:22px;cursor:pointer;flex-shrink:0">' +
+                            '<span style="flex:1;word-break:break-word">' + item.name + '</span>' +
+                            wornBadge +
+                        '</div>' +
+                        '<div style="color:#446;font-size:13px;margin-left:32px;margin-top:2px;word-break:break-all">' +
+                            item.path +
+                        '</div>' +
+                    '</label>';
+            });
+            area.innerHTML = html;
+        });
+
         // ── Speichern ──────────────────────────────────────────
         document.getElementById('modal-save').addEventListener('click', function () {
-            // Alle gechecked Checkboxen sammeln
+            // Alle gechecked Checkboxen sammeln (dedupliziert — z.B. mehrere @remoutfit=force)
             var commands = [];
+            var seen = {};
             box.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
-                if (cb.checked) commands.push(cb.value);
+                if (cb.checked && !seen[cb.value]) {
+                    commands.push(cb.value);
+                    seen[cb.value] = true;
+                }
             });
             var cmdsPipe = commands.join('|');
 
