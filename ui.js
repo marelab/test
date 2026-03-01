@@ -49,6 +49,12 @@
         '.outfit-card img { width:110px; height:110px; object-fit:cover; border-radius:5px; background:#252535; }',
         '.outfit-card .oname { word-break:break-word; line-height:1.2; max-width:120px; }',
         '.outfit-card .norlv { color:#cc6644; font-size:16px; }',
+        '.naked-btn { background:#7a1a5a; color:#fff; font-size:15px; padding:5px 6px;',
+        '  width:100%; border:0; border-radius:4px; margin-top:4px; cursor:pointer; }',
+        '.naked-btn:hover { background:#aa2880; }',
+        '.editu-btn { background:#1a4060; color:#fff; font-size:15px; padding:5px 6px;',
+        '  width:100%; border:0; border-radius:4px; margin-top:2px; cursor:pointer; }',
+        '.editu-btn:hover { background:#2a6090; }',
     ].join('\n');
     document.head.appendChild(css);
 
@@ -129,6 +135,10 @@
                 '🔄 <b>Fallback:</b> Findet @getinv nichts, werden HUD-Texturen angezeigt.<br>' +
                 '🖼️ <b>Vorschaubilder:</b> Textur mit Ordnernamen in HUD-Content legen<br>' +
                 '&nbsp;&nbsp;&nbsp;&nbsp;(z.B. Textur namens <i>CasualDress</i> oder <i>Outfits/CasualDress</i>).<br>' +
+                '👙 <b>Naked-Button:</b> Notecard <b>naked</b> in HUD-Content legen.<br>' +
+                '&nbsp;&nbsp;&nbsp;&nbsp;Format: <i>[OutfitName]</i> als Header, darunter RLV-Befehle.<br>' +
+                '&nbsp;&nbsp;&nbsp;&nbsp;<i>[*]</i> = Standard-Fallback für alle anderen Outfits.<br>' +
+                '&nbsp;&nbsp;&nbsp;&nbsp;Ohne Notecard / kein Eintrag → Standard (alles ausziehen).<br>' +
                 '⚙️ <b>Anderen Pfad:</b> <code>OUTFITS_PATH</code> im LSL-Script anpassen.' +
             '</div>' +
             '<div id="outfit-gallery" class="outfit-gallery">' +
@@ -488,12 +498,14 @@
                       'align-items:center;justify-content:center;font-size:36px">👗</div>';
 
                 return '<div class="outfit-card' + (isWearing ? ' wearing' : '') + '" ' +
-                    'data-folder="' + wearPath + '" title="' + wearPath + '">' +
+                    'data-folder="' + wearPath + '" data-name="' + displayName + '" title="' + wearPath + '">' +
                     imgHtml +
                     '<span class="oname">' + displayName + '</span>' +
                     (!hasThumb
                         ? '<span style="color:#555;font-size:14px">kein Bild</span>'
                         : '') +
+                    '<button class="naked-btn" data-action="naked" title="Kleidung ausziehen (Naked-Notecard)">👙 Naked</button>' +
+                    '<button class="editu-btn" data-action="editnaked" title="Naked-Konfiguration bearbeiten">✏️ Edit U</button>' +
                     '<span class="norlv" style="display:' + (rlvAvailable ? 'none' : 'block') + '">' +
                     '⚠️ kein RLV</span>' +
                     '</div>';
@@ -501,11 +513,32 @@
 
             // Klick-Handler
             gallery.querySelectorAll('.outfit-card').forEach(function (card) {
-                card.addEventListener('click', function () {
+                card.addEventListener('click', function (e) {
                     if (!rlvAvailable) {
-                        setStatus('RLV nicht aktiv – Outfit anziehen nicht möglich', true);
+                        setStatus('RLV nicht aktiv – Befehle nicht möglich', true);
                         return;
                     }
+
+                    // ── Edit-U Button ─────────────────────────────
+                    if (e.target && e.target.getAttribute('data-action') === 'editnaked') {
+                        var efolder = card.getAttribute('data-folder');
+                        var ename   = card.getAttribute('data-name') || efolder.split('/').pop();
+                        openEditNakedDialog(efolder, ename);
+                        return;
+                    }
+
+                    // ── Naked-Button ──────────────────────────────
+                    if (e.target && e.target.getAttribute('data-action') === 'naked') {
+                        var nakedFolder = card.getAttribute('data-folder');
+                        var nakedName   = nakedFolder.split('/').pop();
+                        setStatus('👙 Ziehe aus: ' + nakedName + '...', false);
+                        api('outfit_naked', { folder: nakedFolder }, function () {
+                            setStatus('✓ Naked: ' + nakedName, false);
+                        });
+                        return; // Outfit NICHT anziehen
+                    }
+
+                    // ── Outfit anziehen (Klick auf Karte) ─────────
                     var folder = card.getAttribute('data-folder');
                     gallery.querySelectorAll('.outfit-card.wearing').forEach(function (c) {
                         c.classList.remove('wearing');
@@ -522,6 +555,158 @@
     }
 
     bind('btn-outfit-scan', loadOutfitGallery);
+
+    // ── Edit U — Naked-Dialog ──────────────────────────────────
+
+    function makeNakedCheck(id, value, labelHtml) {
+        return '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;' +
+            'background:#111627;border:1px solid #334;border-radius:6px;' +
+            'padding:9px 12px;font-size:18px;margin-bottom:5px;user-select:none">' +
+            '<input type="checkbox" id="' + id + '" value="' + value + '" checked ' +
+                'style="width:22px;height:22px;cursor:pointer;flex-shrink:0">' +
+            labelHtml + '</label>';
+    }
+
+    function openEditNakedDialog(wearPath, displayName) {
+        // Vorhandenen Dialog entfernen
+        var old = document.getElementById('naked-edit-modal');
+        if (old) old.remove();
+
+        var overlay = document.createElement('div');
+        overlay.id = 'naked-edit-modal';
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;' +
+            'background:rgba(0,0,0,0.80);z-index:1000;display:flex;' +
+            'align-items:flex-start;justify-content:center;' +
+            'padding:16px 10px;overflow-y:auto;box-sizing:border-box';
+
+        var box = document.createElement('div');
+        box.style.cssText = 'background:#1a1a2e;border:2px solid #0066cc;border-radius:10px;' +
+            'padding:16px;width:100%;max-width:500px;box-sizing:border-box';
+
+        // ── Statischer Inhalt (wird sofort gerendert) ──────────
+        box.innerHTML =
+            // Kopfzeile
+            '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">' +
+                '<div>' +
+                    '<div style="font-size:22px;font-weight:bold;color:#66aaff">✏️ Naked konfigurieren</div>' +
+                    '<div style="font-size:19px;color:#ccc;margin-top:3px">' + displayName + '</div>' +
+                '</div>' +
+                '<button id="modal-close-x" style="background:none;color:#aaa;font-size:28px;' +
+                    'border:0;cursor:pointer;line-height:1;padding:0 4px">✕</button>' +
+            '</div>' +
+
+            // Erklärung
+            '<div style="background:#0d1520;border:1px solid #334;border-radius:6px;' +
+                'padding:10px 12px;font-size:17px;color:#8899bb;margin-bottom:12px;line-height:1.5">' +
+                '✅ <b style="color:#aac">gecheckt = wird beim Naked-Button entfernt</b><br>' +
+                '☐ &nbsp;unkecked = bleibt erhalten (kein Häkchen = in Notecard gespeichert)' +
+            '</div>' +
+
+            // Kleidungslagen
+            '<div style="font-size:20px;font-weight:bold;margin-bottom:6px">🎽 Kleidungslagen</div>' +
+            makeNakedCheck('chk-remoutfit', '@remoutfit=force',
+                'Alle Kleidungslagen entfernen' +
+                '<span style="color:#557;font-size:15px;margin-left:6px">(@remoutfit=force)</span>') +
+
+            // Attachments
+            '<div style="font-size:20px;font-weight:bold;margin:12px 0 6px">📦 Outfit-Attachments</div>' +
+            makeNakedCheck('chk-detach-all', '@detach:' + wearPath + '/=force',
+                'Alle Attachments im Ordner' +
+                '<span style="color:#557;font-size:15px;margin-left:6px">(@detach:' + wearPath + '/)</span>') +
+            // Unterordner (werden per API nachgeladen)
+            '<div id="modal-sf-area">' +
+                '<div id="modal-sf-loading" style="color:#6688aa;font-size:17px;padding:6px 0">' +
+                    '⏳ Lade Unterordner aus #RLV...' +
+                '</div>' +
+            '</div>' +
+
+            // Notecard-Vorlage (erst nach Speichern sichtbar)
+            '<div id="modal-nc-section" style="display:none;margin-top:10px">' +
+                '<div style="font-size:18px;font-weight:bold;color:#aaa;margin-bottom:4px">' +
+                    '📋 Notecard-Vorlage <span style="color:#667;font-size:15px">(für permanente Speicherung)</span>' +
+                '</div>' +
+                '<textarea id="modal-nc-text" readonly style="width:100%;height:110px;' +
+                    'background:#060c14;color:#7af;border:1px solid #336;border-radius:5px;' +
+                    'font-size:15px;padding:8px;font-family:monospace;box-sizing:border-box;' +
+                    'resize:vertical"></textarea>' +
+                '<div style="font-size:15px;color:#556;margin-top:4px;line-height:1.4">' +
+                    'Diesen Text in die Notecard <b>naked</b> im HUD-Content kopieren → permanente Speicherung.' +
+                '</div>' +
+            '</div>' +
+
+            // Buttons
+            '<div style="display:flex;gap:8px;margin-top:14px">' +
+                '<button id="modal-save" style="flex:1;background:#006630;color:#fff;font-size:20px;' +
+                    'padding:12px;border:0;border-radius:6px;cursor:pointer;font-weight:bold">' +
+                    '💾 Speichern & Schließen</button>' +
+                '<button id="modal-cancel" style="background:#552200;color:#fff;font-size:18px;' +
+                    'padding:12px 18px;border:0;border-radius:6px;cursor:pointer">✕ Abbrechen</button>' +
+            '</div>';
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        // ── Schließen-Handler ──────────────────────────────────
+        function closeDialog() { overlay.remove(); }
+        document.getElementById('modal-close-x').addEventListener('click', closeDialog);
+        document.getElementById('modal-cancel').addEventListener('click', closeDialog);
+        overlay.addEventListener('click', function(e) { if (e.target === overlay) closeDialog(); });
+
+        // ── Unterordner per API nachladen ──────────────────────
+        // Timeout falls RLV nicht antwortet
+        var sfTimeout = setTimeout(function () {
+            var ld = document.getElementById('modal-sf-loading');
+            if (ld) ld.innerHTML =
+                '<span style="color:#664;font-size:17px">Keine Unterordner gefunden (Timeout).</span>';
+        }, 9000);
+
+        api('outfit_subfolder_list', { folder: wearPath }, function (subfolders) {
+            clearTimeout(sfTimeout);
+            var area = document.getElementById('modal-sf-area');
+            if (!area) return;
+
+            var html = '';
+            if (subfolders && subfolders.length > 0) {
+                subfolders.forEach(function (sf, idx) {
+                    html += makeNakedCheck('chk-sf-' + idx,
+                        '@detach:' + wearPath + '/' + sf + '/=force',
+                        '&nbsp;&nbsp;└ ' + sf +
+                        '<span style="color:#557;font-size:15px;margin-left:6px">' +
+                            '(@detach:' + wearPath + '/' + sf + '/)</span>');
+                });
+            } else {
+                html = '<div style="color:#666;font-size:17px;padding:4px 0">Keine Unterordner — ' +
+                    'nur "Alle Attachments" wird verwendet.</div>';
+            }
+            area.innerHTML = html;
+        });
+
+        // ── Speichern ──────────────────────────────────────────
+        document.getElementById('modal-save').addEventListener('click', function () {
+            // Alle gechecked Checkboxen sammeln
+            var commands = [];
+            box.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+                if (cb.checked) commands.push(cb.value);
+            });
+            var cmdsPipe = commands.join('|');
+
+            // Notecard-Vorlage generieren und anzeigen
+            var ncText = '[' + displayName + ']\n';
+            commands.forEach(function (c) { ncText += c + '\n'; });
+            var ncSection = document.getElementById('modal-nc-section');
+            var ncTextEl  = document.getElementById('modal-nc-text');
+            if (ncSection) ncSection.style.display = 'block';
+            if (ncTextEl)  { ncTextEl.value = ncText; ncTextEl.select(); }
+
+            setStatus('💾 Speichere Naked-Konfiguration...', false);
+            api('outfit_naked_update', { folder: wearPath, commands: cmdsPipe }, function (res) {
+                var n = res && res.count !== undefined ? res.count : commands.length;
+                setStatus('✓ Naked "' + displayName + '" gespeichert · ' + n + ' Befehle aktiv', false);
+                // Dialog nach kurzer Pause schließen (damit Notecard-Text lesbar ist)
+                setTimeout(function () { overlay.remove(); }, 2200);
+            });
+        });
+    }
 
     // Galerie laden wenn Outfit-Tab geöffnet wird
     var _origTabLogic = null; // wird nach Tab-Logik-Init gesetzt
