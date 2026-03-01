@@ -659,7 +659,7 @@
                 '</div>' +
             '</div>' +
 
-            // Items-Liste (werden per @getinvworn nachgeladen)
+            // Items-Liste (werden per @getinv nachgeladen)
             '<div style="font-size:20px;font-weight:bold;margin:14px 0 4px">📋 Outfit-Items</div>' +
             '<div style="background:#0a1018;border:1px solid #2a3448;border-radius:6px;' +
                 'padding:7px 11px;font-size:15px;color:#7788aa;margin-bottom:8px;line-height:1.5">' +
@@ -668,7 +668,7 @@
             '</div>' +
             '<div id="modal-items-area">' +
                 '<div id="modal-items-loading" style="color:#6688aa;font-size:17px;padding:6px 0">' +
-                    '⏳ Lade Items aus #RLV (@getinvworn)...' +
+                    '⏳ Lade Items aus #RLV...' +
                 '</div>' +
             '</div>' +
 
@@ -704,82 +704,111 @@
         document.getElementById('modal-cancel').addEventListener('click', closeDialog);
         overlay.addEventListener('click', function(e) { if (e.target === overlay) closeDialog(); });
 
-        // ── Unterordner per API nachladen ──────────────────────
-        // Timeout falls RLV nicht antwortet
+        // ── Items rendern ──────────────────────────────────────
+        // Alle gefundenen Items als Checkbox-Zeilen anzeigen.
+        // Jede Zeile: [✓] Name  —  RLV-Pfad
+        // Gecheckt = wird beim Naked-Button entfernt (@detach:path=force)
+        function renderItemList(items) {
+            var iArea = document.getElementById('modal-items-area');
+            if (!iArea) return;
+            if (!items || items.length === 0) {
+                iArea.innerHTML =
+                    '<div style="color:#666;font-size:17px;padding:6px 0">' +
+                    'Keine Items gefunden — Ordner leer oder RLV nicht aktiv.</div>';
+                return;
+            }
+            var html = '';
+            items.forEach(function (item) {
+                html +=
+                    '<label style="display:block;cursor:pointer;background:#111627;' +
+                        'border:1px solid #334;border-radius:6px;padding:8px 12px;' +
+                        'font-size:17px;margin-bottom:4px;user-select:none">' +
+                        '<div style="display:flex;align-items:center;gap:10px">' +
+                            '<input type="checkbox" class="item-chk"' +
+                                ' value="@detach:' + item.path + '=force" checked' +
+                                ' style="width:22px;height:22px;cursor:pointer;flex-shrink:0">' +
+                            '<span style="flex:1;word-break:break-word">' + item.name + '</span>' +
+                        '</div>' +
+                        '<div style="color:#446;font-size:13px;margin-left:32px;' +
+                            'margin-top:2px;word-break:break-all">' + item.path + '</div>' +
+                    '</label>';
+            });
+            iArea.innerHTML = html;
+        }
+
+        // ── Unterordner + Items sequenziell nachladen ──────────
+        // Schritt 1: Unterordner laden → Checkboxen UND Item-Scan starten
+        // Schritt 2: @getinv für Hauptordner (Items ohne Unterordner-Namen)
+        // Schritt 3: @getinv für jeden Unterordner (Items darin)
+        // → LSL doItemsList nutzt eigene State-Vars, läuft seriell um Konflikte zu vermeiden
         var sfTimeout = setTimeout(function () {
             var ld = document.getElementById('modal-sf-loading');
             if (ld) ld.innerHTML =
-                '<span style="color:#664;font-size:17px">Keine Unterordner gefunden (Timeout).</span>';
+                '<span style="color:#664;font-size:17px">Keine Unterordner (Timeout).</span>';
+            startItemScan([]); // Items aus Hauptordner trotzdem laden
         }, 9000);
 
         api('outfit_subfolder_list', { folder: wearPath }, function (subfolders) {
             clearTimeout(sfTimeout);
-            var area = document.getElementById('modal-sf-area');
-            if (!area) return;
+            var sfArea = document.getElementById('modal-sf-area');
+            if (!sfArea) return;
 
-            var html = '';
-            if (subfolders && subfolders.length > 0) {
-                subfolders.forEach(function (sf, idx) {
-                    html += makeNakedCheck('chk-sf-' + idx,
+            var sfNames = subfolders || [];
+            var sfHtml = '';
+            if (sfNames.length > 0) {
+                sfNames.forEach(function (sf, idx) {
+                    sfHtml += makeNakedCheck('chk-sf-' + idx,
                         '@detach:' + wearPath + '/' + sf + '/=force',
                         '&nbsp;&nbsp;└ ' + sf +
                         '<span style="color:#557;font-size:15px;margin-left:6px">' +
                             '(@detach:' + wearPath + '/' + sf + '/)</span>');
                 });
             } else {
-                html = '<div style="color:#666;font-size:17px;padding:4px 0">Keine Unterordner — ' +
+                sfHtml = '<div style="color:#666;font-size:17px;padding:4px 0">Keine Unterordner — ' +
                     'nur "Alle Attachments" wird verwendet.</div>';
             }
-            area.innerHTML = html;
+            sfArea.innerHTML = sfHtml;
+
+            startItemScan(sfNames);
         });
 
-        // ── Items per @getinvworn nachladen ────────────────────
-        var itemsTimeout = setTimeout(function () {
-            var ld = document.getElementById('modal-items-loading');
-            if (ld) ld.innerHTML =
-                '<span style="color:#664;font-size:17px">⚠ Timeout — @getinvworn nicht unterstützt oder Ordner leer.</span>';
-        }, 9000);
+        // Sequenzieller Item-Scan: erst Hauptordner, dann je ein Unterordner
+        function startItemScan(sfNames) {
+            var allItems    = [];
+            var sfNameSet   = {};
+            sfNames.forEach(function (n) { sfNameSet[n] = true; });
 
-        api('outfit_items_list', { folder: wearPath }, function (items) {
-            clearTimeout(itemsTimeout);
-            var area = document.getElementById('modal-items-area');
-            if (!area) return;
-
-            if (!items || items.length === 0) {
-                area.innerHTML = '<div style="color:#666;font-size:17px;padding:4px 0">Keine Items im Ordner gefunden.</div>';
-                return;
-            }
-
-            var html = '';
-            items.forEach(function (item) {
-                var worn   = (item.worn !== undefined) ? item.worn : 1;
-                var isWorn = worn >= 1;
-                // worn=2 (Attachment): per Pfad detachen
-                // worn=1 (Kleidungslage): allgemeiner @remoutfit (Layer nicht bekannt)
-                // worn=0: @detach trotzdem anbieten (Item im Ordner, aktuell nicht getragen)
-                var rlvCmd = (worn === 1)
-                    ? '@remoutfit=force'
-                    : '@detach:' + item.path + '=force';
-                var wornBadge = isWorn
-                    ? '<span style="color:#44cc66;font-size:14px;flex-shrink:0">✓ getragen</span>'
-                    : '<span style="color:#555;font-size:14px;flex-shrink:0">○ nicht getragen</span>';
-                html +=
-                    '<label style="display:block;cursor:pointer;background:#111627;border:1px solid #334;' +
-                        'border-radius:6px;padding:8px 12px;font-size:17px;margin-bottom:4px;user-select:none">' +
-                        '<div style="display:flex;align-items:center;gap:10px">' +
-                            '<input type="checkbox" class="item-chk" value="' + rlvCmd + '"' +
-                                (isWorn ? ' checked' : '') +
-                                ' style="width:22px;height:22px;cursor:pointer;flex-shrink:0">' +
-                            '<span style="flex:1;word-break:break-word">' + item.name + '</span>' +
-                            wornBadge +
-                        '</div>' +
-                        '<div style="color:#446;font-size:13px;margin-left:32px;margin-top:2px;word-break:break-all">' +
-                            item.path +
-                        '</div>' +
-                    '</label>';
+            // Queue: Hauptordner zuerst, dann Unterordner
+            var scanQueue = [{ folder: wearPath, isRoot: true }];
+            sfNames.forEach(function (sf) {
+                scanQueue.push({ folder: wearPath + '/' + sf, isRoot: false });
             });
-            area.innerHTML = html;
-        });
+
+            var globalTimeout = setTimeout(function () {
+                // Timeout für alle Scans — zeige was bisher gesammelt
+                renderItemList(allItems);
+            }, 20000);
+
+            function scanNext() {
+                if (scanQueue.length === 0) {
+                    clearTimeout(globalTimeout);
+                    renderItemList(allItems);
+                    return;
+                }
+                var entry = scanQueue.shift();
+                api('outfit_items_list', { folder: entry.folder }, function (children) {
+                    if (children) {
+                        children.forEach(function (child) {
+                            // Im Hauptordner: Unterordner-Namen überspringen
+                            if (entry.isRoot && sfNameSet[child.name]) return;
+                            allItems.push(child);
+                        });
+                    }
+                    scanNext(); // nächsten Ordner scannen
+                });
+            }
+            scanNext();
+        }
 
         // ── Speichern ──────────────────────────────────────────
         document.getElementById('modal-save').addEventListener('click', function () {
