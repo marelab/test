@@ -282,6 +282,40 @@
         });
     });
 
+    // ── Reconnect-Overlay ─────────────────────────────────────
+    // Wird angezeigt wenn die HUD-URL abgelaufen ist (cap not found).
+    // Der Nutzer muss das Script resetten; danach lädt der Home-Button
+    // die neue URL (PRIM_MEDIA_HOME_URL wurde vom LSL-Script aktualisiert).
+    var reconnectShown = false;
+    function showReconnect() {
+        if (reconnectShown) return;
+        reconnectShown = true;
+        var ov = document.createElement('div');
+        ov.id = 'reconnect-ov';
+        ov.style.cssText = 'position:fixed;inset:0;background:#0d0010;z-index:9999;'
+            + 'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+            + 'padding:24px;text-align:center;';
+        ov.innerHTML =
+            '<div style="font-size:52px;margin-bottom:16px">🔌</div>'
+          + '<div style="font-size:28px;color:#ff6060;font-weight:bold;margin-bottom:14px">'
+          +   'HUD-Verbindung unterbrochen</div>'
+          + '<div style="font-size:20px;color:#ccc;line-height:1.7;margin-bottom:24px">'
+          +   'Die URL des HUDs ist abgelaufen.<br>'
+          +   'Bitte HUD-Script zurücksetzen:<br>'
+          +   '<b style="color:#fff">Rechtsklick HUD → Edit → Scripts → Reset</b><br><br>'
+          +   'Danach den <b style="color:#ffcc44">⌂ Home-Button</b> im Browser drücken<br>'
+          +   'oder unten auf <b style="color:#6cf">Neu laden</b> tippen.</div>'
+          + '<button id="btn-reconnect" style="padding:18px 36px;background:#0066cc;border:none;'
+          +   'color:#fff;font-size:24px;border-radius:8px;cursor:pointer;margin-bottom:12px">'
+          +   '🔄 Neu laden</button>'
+          + '<div style="font-size:16px;color:#666;margin-top:8px">'
+          +   'Neue URL steht im Hover-Text über dem HUD.</div>';
+        document.body.appendChild(ov);
+        document.getElementById('btn-reconnect').onclick = function () {
+            location.reload();
+        };
+    }
+
     // ── API ───────────────────────────────────────────────────
     function setStatus(msg, isErr) {
         var sb = document.getElementById('statusbar');
@@ -297,6 +331,11 @@
         x.setRequestHeader('Content-Type', 'text/plain');
         x.timeout = 8000;
         x.onload = function () {
+            // 404 = cap not found (URL abgelaufen), 0 = keine Verbindung
+            if (x.status === 404 || x.status === 0) {
+                showReconnect();
+                return;
+            }
             try {
                 var j = JSON.parse(x.responseText);
                 if (j.status === 'ok') {
@@ -309,7 +348,7 @@
                 setStatus('Parse-Fehler', true);
             }
         };
-        x.onerror   = function () { setStatus('Verbindungsfehler – HUD erreichbar?', true); };
+        x.onerror   = function () { showReconnect(); };
         x.ontimeout = function () { setStatus('Timeout (8s) – HUD zu langsam?', true); };
         x.send(JSON.stringify(data));
     }
