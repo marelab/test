@@ -55,7 +55,7 @@
         '.editu-btn { background:#1a4060; color:#fff; font-size:15px; padding:5px 6px;',
         '  width:100%; border:0; border-radius:4px; margin-top:2px; cursor:pointer; }',
         '.editu-btn:hover { background:#2a6090; }',
-        '.gallery-help { position:relative; cursor:help; display:inline-flex; align-items:center; gap:6px; }',
+        '.gallery-help { position:relative; cursor:help; display:inline-block; }',
         '.gallery-tooltip { display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:200;',
         '  background:#131a25; border:1px solid #445; border-radius:6px; padding:10px 14px;',
         '  font-size:16px; font-weight:normal; color:#8899bb; line-height:1.6; width:370px;',
@@ -71,6 +71,7 @@
             '<div class="tab active" data-tab="move">Bewegen</div>' +
             '<div class="tab" data-tab="sit">Sitzen</div>' +
             '<div class="tab" data-tab="outfit">Outfit</div>' +
+            '<div class="tab" data-tab="shapes">Shapes</div>' +
             '<div class="tab" data-tab="anim">Anim</div>' +
             '<div class="tab" data-tab="chat">Chat</div>' +
             '<div class="tab" data-tab="tp">Teleport</div>' +
@@ -131,7 +132,7 @@
             // ── OUTFIT GALERIE ──
             '<div class="sep"></div>' +
             '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:4px">' +
-                '<span class="gallery-help" style="font-size:24px;font-weight:bold">' +
+                '<div class="gallery-help" style="font-size:24px;font-weight:bold">' +
                     '📦 Outfit Galerie <span style="font-size:15px;color:#556">ℹ</span>' +
                     '<div class="gallery-tooltip">' +
                         '🔍 <b>Mit RLV:</b> Scannt <b>#RLV/Outfits</b> (via @getinv) + HUD-Content-Texturen.<br>' +
@@ -142,11 +143,22 @@
                         '&nbsp;&nbsp;Format: <i>[OutfitName]</i>, darunter RLV-Befehle. <i>[*]</i> = Fallback.<br>' +
                         '⚙️ <b>Pfad:</b> <code>OUTFITS_PATH</code> im LSL-Script anpassen.' +
                     '</div>' +
-                '</span>' +
+                '</div>' +
                 '<button class="bb" id="btn-outfit-scan" style="font-size:18px;padding:7px 14px">🔄 Scannen</button>' +
                 '<span id="outfit-gallery-count" style="color:#666;font-size:18px"></span>' +
             '</div>' +
             '<div id="outfit-gallery" class="outfit-gallery">' +
+                '<span style="color:#555;font-size:20px">Klicke Scannen zum Laden...</span>' +
+            '</div>' +
+        '</div>' +
+
+        // ── SHAPES ──
+        '<div id="p-shapes" class="panel">' +
+            '<div style="margin-bottom:8px;display:flex;align-items:center;gap:8px">' +
+                '<button class="bb" id="btn-shapes-scan" style="font-size:18px;padding:7px 14px">🔄 Scannen</button>' +
+                '<span id="shapes-gallery-count" style="color:#666;font-size:18px"></span>' +
+            '</div>' +
+            '<div id="shapes-gallery" class="outfit-gallery">' +
                 '<span style="color:#555;font-size:20px">Klicke Scannen zum Laden...</span>' +
             '</div>' +
         '</div>' +
@@ -269,6 +281,7 @@
 
     // ── Tab-Logik ─────────────────────────────────────────────
     var outfitGalleryLoaded = false;
+    var shapeGalleryLoaded  = false;
 
     document.querySelectorAll('.tab').forEach(function (tab) {
         tab.addEventListener('click', function () {
@@ -283,6 +296,11 @@
             if (name === 'outfit' && !outfitGalleryLoaded) {
                 outfitGalleryLoaded = true;
                 loadOutfitGallery();
+            }
+            // Shapes-Galerie beim ersten Öffnen automatisch scannen
+            if (name === 'shapes' && !shapeGalleryLoaded) {
+                shapeGalleryLoaded = true;
+                loadShapeGallery();
             }
         });
     });
@@ -599,6 +617,88 @@
     }
 
     bind('btn-outfit-scan', loadOutfitGallery);
+
+    // ── Shape Galerie ─────────────────────────────────────────
+
+    var currentShape = null;
+
+    function loadShapeGallery() {
+        var gallery  = document.getElementById('shapes-gallery');
+        var countEl  = document.getElementById('shapes-gallery-count');
+        if (gallery) gallery.innerHTML = '<span style="color:#aaaaff;font-size:20px">⏳ Scanne #RLV/' + 'Shapes' + '...</span>';
+        if (countEl) countEl.textContent = '';
+
+        api('shape_list', {}, function (shapes) {
+            if (!gallery) return;
+
+            if (!shapes || shapes.length === 0) {
+                gallery.innerHTML =
+                    '<div style="color:#777;font-size:20px;padding:10px;line-height:1.6">' +
+                    '🗂️ Keine Shapes gefunden.<br>' +
+                    '<b>So einrichten:</b><br>' +
+                    '1. Ordner <b>#RLV/Shapes/</b> anlegen<br>' +
+                    '2. Für jede Shape einen Unterordner mit der Shape-Datei anlegen<br>' +
+                    '3. Nochmal Scannen klicken' +
+                    '</div>';
+                if (countEl) countEl.textContent = '(0 Shapes)';
+                return;
+            }
+
+            if (countEl) countEl.textContent = '(' + shapes.length + ' Shapes)';
+
+            gallery.innerHTML = shapes.map(function (o) {
+                var wearPath    = o.path || o.name;
+                var displayName = o.name || wearPath.split('/').pop();
+                var hasThumb    = o.uuid && o.uuid.length > 10;
+                var thumbUrl    = hasThumb
+                    ? 'https://picture-service.secondlife.com/' + o.uuid + '/100x100.jpg'
+                    : '';
+                var isWearing   = (currentShape === wearPath);
+
+                var imgHtml = hasThumb
+                    ? '<img src="' + thumbUrl + '" ' +
+                      'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" ' +
+                      'alt="' + displayName + '">' +
+                      '<div style="display:none;width:110px;height:110px;background:#252535;border-radius:5px;' +
+                      'align-items:center;justify-content:center;font-size:36px">🧍</div>'
+                    : '<div style="display:flex;width:110px;height:110px;background:#252535;border-radius:5px;' +
+                      'align-items:center;justify-content:center;font-size:36px">🧍</div>';
+
+                return '<div class="outfit-card' + (isWearing ? ' wearing' : '') + '" ' +
+                    'data-folder="' + wearPath + '" title="' + wearPath + '">' +
+                    imgHtml +
+                    '<span class="oname">' + displayName + '</span>' +
+                    (!hasThumb ? '<span style="color:#555;font-size:14px">kein Bild</span>' : '') +
+                    '<span class="norlv" style="display:' + (rlvAvailable ? 'none' : 'block') + '">' +
+                    '⚠️ kein RLV</span>' +
+                    '</div>';
+            }).join('');
+
+            gallery.querySelectorAll('.outfit-card').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    if (!rlvAvailable) {
+                        setStatus('RLV nicht aktiv – Befehle nicht möglich', true);
+                        return;
+                    }
+                    var folder = card.getAttribute('data-folder');
+                    gallery.querySelectorAll('.outfit-card.wearing').forEach(function (c) {
+                        c.classList.remove('wearing');
+                    });
+                    card.classList.add('wearing');
+                    currentShape = folder;
+                    setStatus('⏳ Wechsle Shape: ' + folder.split('/').pop(), false);
+                    api('shape_wear', { folder: folder }, function () {
+                        setStatus('✓ Shape gewechselt: ' + folder.split('/').pop(), false);
+                    });
+                });
+            });
+        });
+    }
+
+    bind('btn-shapes-scan', function () {
+        shapeGalleryLoaded = true;
+        loadShapeGallery();
+    });
 
     // ── Edit U — Naked-Dialog ──────────────────────────────────
 
@@ -965,104 +1065,4 @@
         img.src = '';
         ph.style.display  = 'block';
         ph.textContent    = '⏳ Lade Vorschau...';
-        texStatus('');
-        var urlEl = document.getElementById('tex-url');
-        if (urlEl) urlEl.textContent = '';
-
-        // Zuerst die gewählte Größe versuchen, dann Fallbacks
-        var primaryUrl = 'https://picture-service.secondlife.com/' + uuid + '/' + currentTexSize + '.jpg';
-        tryTextureUrl(uuid, primaryUrl, 0);
-    });
-
-    bind('btn-tex-setprim', function () {
-        var uuid = val('tex-uuid');
-        if (!uuid) { texStatus('Bitte UUID eingeben', '#ff6060'); return; }
-        api('texture_set', { uuid: uuid, face: 0 }, function () {
-            texStatus('✓ Textur auf Prim gesetzt!', '#66dd66');
-        });
-    });
-
-    bind('btn-tex-copy', function () {
-        var uuid = val('tex-uuid');
-        if (!uuid) return;
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(uuid).then(function () {
-                texStatus('✓ UUID kopiert: ' + uuid, '#66dd66');
-            });
-        } else {
-            // Fallback für ältere Browser (SL CEF)
-            var tmp = document.createElement('textarea');
-            tmp.value = uuid;
-            document.body.appendChild(tmp);
-            tmp.select();
-            document.execCommand('copy');
-            document.body.removeChild(tmp);
-            texStatus('✓ UUID kopiert: ' + uuid, '#66dd66');
-        }
-    });
-
-    bind('btn-tex-save', function () {
-        var uuid  = val('tex-uuid');
-        var label = val('tex-label') || uuid.substring(0, 8) + '...';
-        if (!uuid) { texStatus('Bitte erst UUID eingeben und Vorschau laden', '#ff6060'); return; }
-
-        var img = document.getElementById('tex-img');
-        var thumb = img && img.style.display !== 'none' ? img.src : null;
-
-        savedTextures.push({ uuid: uuid, label: label, thumb: thumb });
-        renderSavedTextures();
-        texStatus('✓ "' + label + '" gespeichert', '#66dd66');
-        document.getElementById('tex-label').value = '';
-    });
-
-    function renderSavedTextures() {
-        var container = document.getElementById('tex-saved');
-        if (!container) return;
-        if (savedTextures.length === 0) {
-            container.innerHTML = '<span style="color:#555;font-size:20px">Noch keine gespeichert.</span>';
-            return;
-        }
-        container.innerHTML = savedTextures.map(function (t, i) {
-            var thumb = t.thumb
-                ? '<img src="' + t.thumb + '" onerror="this.style.display=\'none\'">'
-                : '<span style="width:36px;height:36px;display:inline-block;background:#333;border-radius:4px"></span>';
-            return '<span class="tex-chip" data-uuid="' + t.uuid + '" data-index="' + i + '">' +
-                       thumb +
-                       '<span>' + t.label + '</span>' +
-                       '<span class="del" data-del="' + i + '">✕</span>' +
-                   '</span>';
-        }).join('');
-
-        // Klick auf Chip → UUID ins Eingabefeld laden
-        container.querySelectorAll('.tex-chip').forEach(function (chip) {
-            chip.addEventListener('click', function (e) {
-                if (e.target.getAttribute('data-del') !== null) {
-                    // Löschen
-                    var idx = parseInt(e.target.getAttribute('data-del'));
-                    savedTextures.splice(idx, 1);
-                    renderSavedTextures();
-                    return;
-                }
-                var uuid = chip.getAttribute('data-uuid');
-                document.getElementById('tex-uuid').value = uuid;
-                texStatus('UUID geladen: ' + uuid, '#aaaaff');
-            });
-        });
-    }
-
-    // Enter in UUID-Feld = Vorschau laden
-    var texInput = document.getElementById('tex-uuid');
-    if (texInput) {
-        texInput.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') {
-                document.getElementById('btn-tex-preview').click();
-                e.preventDefault();
-            }
-        });
-    }
-
-    // Start
-    updateStatus();
-    setInterval(updateStatus, 15000);
-
-})();
+     
