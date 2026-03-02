@@ -1,3 +1,5 @@
 [REBORN_BODY]
 @detachall:REBORN_BODY/naked/=force,attachallover:REBORN_BODY/dick/=force
+[R_NUM]
+@detachall:REBORN_BODY/naked/=force,attachallover:REBORN_BODY/dick/=force
 
