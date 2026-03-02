@@ -1065,4 +1065,105 @@
         img.src = '';
         ph.style.display  = 'block';
         ph.textContent    = '⏳ Lade Vorschau...';
+        texStatus('');
+        var urlEl = document.getElementById('tex-url');
+        if (urlEl) urlEl.textContent = '';
+
+        // Zuerst die gewählte Größe versuchen, dann Fallbacks
+        var primaryUrl = 'https://picture-service.secondlife.com/' + uuid + '/' + currentTexSize + '.jpg';
+        tryTextureUrl(uuid, primaryUrl, 0);
+    });
+
+    bind('btn-tex-setprim', function () {
+        var uuid = val('tex-uuid');
+        if (!uuid) { texStatus('Bitte UUID eingeben', '#ff6060'); return; }
+        api('texture_set', { uuid: uuid, face: 0 }, function () {
+            texStatus('✓ Textur auf Prim gesetzt!', '#66dd66');
+        });
+    });
+
+    bind('btn-tex-copy', function () {
+        var uuid = val('tex-uuid');
+        if (!uuid) return;
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(uuid).then(function () {
+                texStatus('✓ UUID kopiert: ' + uuid, '#66dd66');
+            });
+        } else {
+            // Fallback für ältere Browser (SL CEF)
+            var tmp = document.createElement('textarea');
+            tmp.value = uuid;
+            document.body.appendChild(tmp);
+            tmp.select();
+            document.execCommand('copy');
+            document.body.removeChild(tmp);
+            texStatus('✓ UUID kopiert: ' + uuid, '#66dd66');
+        }
+    });
+
+    bind('btn-tex-save', function () {
+        var uuid  = val('tex-uuid');
+        var label = val('tex-label') || uuid.substring(0, 8) + '...';
+        if (!uuid) { texStatus('Bitte erst UUID eingeben und Vorschau laden', '#ff6060'); return; }
+
+        var img = document.getElementById('tex-img');
+        var thumb = img && img.style.display !== 'none' ? img.src : null;
+
+        savedTextures.push({ uuid: uuid, label: label, thumb: thumb });
+        renderSavedTextures();
+        texStatus('✓ "' + label + '" gespeichert', '#66dd66');
+        document.getElementById('tex-label').value = '';
+    });
+
+    function renderSavedTextures() {
+        var container = document.getElementById('tex-saved');
+        if (!container) return;
+        if (savedTextures.length === 0) {
+            container.innerHTML = '<span style="color:#555;font-size:20px">Noch keine gespeichert.</span>';
+            return;
+        }
+        container.innerHTML = savedTextures.map(function (t, i) {
+            var thumb = t.thumb
+                ? '<img src="' + t.thumb + '" onerror="this.style.display=\'none\'">'
+                : '<span style="width:36px;height:36px;display:inline-block;background:#333;border-radius:4px"></span>';
+            return '<span class="tex-chip" data-uuid="' + t.uuid + '" data-index="' + i + '">' +
+                       thumb +
+                       '<span>' + t.label + '</span>' +
+                       '<span class="del" data-del="' + i + '">✕</span>' +
+                   '</span>';
+        }).join('');
+
+        // Klick auf Chip → UUID ins Eingabefeld laden
+        container.querySelectorAll('.tex-chip').forEach(function (chip) {
+            chip.addEventListener('click', function (e) {
+                if (e.target.getAttribute('data-del') !== null) {
+                    // Löschen
+                    var idx = parseInt(e.target.getAttribute('data-del'));
+                    savedTextures.splice(idx, 1);
+                    renderSavedTextures();
+                    return;
+                }
+                var uuid = chip.getAttribute('data-uuid');
+                document.getElementById('tex-uuid').value = uuid;
+                texStatus('UUID geladen: ' + uuid, '#aaaaff');
+            });
+        });
+    }
+
+    // Enter in UUID-Feld = Vorschau laden
+    var texInput = document.getElementById('tex-uuid');
+    if (texInput) {
+        texInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                document.getElementById('btn-tex-preview').click();
+                e.preventDefault();
+            }
+        });
+    }
+
+    // Start
+    updateStatus();
+    setInterval(updateStatus, 15000);
+
+})();
      
