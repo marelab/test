@@ -2,4 +2,6 @@
 @detachall:REBORN_BODY/naked/=force,attachallover:REBORN_BODY/dick/=force
 [R_NUM]
 @detachall:R_NUM/naked/=force,attachallover:R_NUM/dick/=force
+[K_LEO]
+@detachall:K_LEO/naked/=force,attachallover:K_LEO/dick/=force
 
